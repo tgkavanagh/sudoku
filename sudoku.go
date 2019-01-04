@@ -58,7 +58,33 @@ var Val2Mask = map[int8]uint16 {
 	9: MASK_9,
 }
 
+var emptyData = [9][9]int8 {
+//   0  1  2  3  4  5  6  7  8
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //0
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //1
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //2
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //3
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //4
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //5
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //6
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //7
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //8
+}
+
 var rootData = [9][9]int8 {
+//   0  1  2  3  4  5  6  7  8
+	{0, 7, 2, 0, 3, 0, 0, 8, 9}, //0
+	{5, 0, 0, 8, 0, 0, 0, 0, 0}, //1
+	{8, 0, 0, 0, 4, 0, 0, 0, 0}, //2
+	{0, 0, 0, 9, 0, 2, 8, 7, 0}, //3
+	{0, 0, 3, 0, 0, 5, 0, 2, 0}, //4
+	{0, 0, 0, 0, 0, 0, 0, 0, 0}, //5
+	{3, 0, 0, 0, 1, 0, 5, 0, 0}, //6
+	{0, 0, 7, 0, 0, 0, 0, 0, 0}, //7
+	{0, 0, 0, 0, 0, 0, 6, 9, 1}, //8
+}
+
+var easy_rootData = [9][9]int8 {
 	{6, 4, 0, 0, 3, 0, 0, 0, 7}, //1
 	{5, 0, 1, 0, 7, 0, 9, 0, 0}, //2
 	{0, 0, 0, 0, 0, 0, 0, 1, 0}, //3
@@ -181,20 +207,48 @@ func (sud Sudoku)solve() bool {
 	return true
 }
 
-func main() {
+func (sud Sudoku)update() {
+	for _, cell := range sud.board {
+		if _, ok := Mask2Val[cell.mask]; ok {
+			// Loop through the entire board and mark off the correct cells
+			for _, tmp := range sud.board {
+				if cell.row == tmp.row && cell.col == tmp.col {
+					continue
+				}
+
+				if _, ok := Mask2Val[tmp.mask]; !ok {
+					if cell.row == tmp.row || cell.col == tmp.col || cell.quad == tmp.quad {
+						tmp.mask = tmp.mask &^ cell.mask
+					}
+				}
+			}
+		}
+	}
+}
+
+func (sud Sudoku)Solve(update bool) {
+	//Start brute force
 	start := time.Now()
 
-	sud := initBoard()
+	if update {
+		sud.update()
+	}
 
 	solved := sud.solve()
-
 	elapsed := time.Since(start)
 
-	fmt.Printf("Time to solve: %s\n\n", elapsed)
 	if !solved {
 		sud.dumpBoard(false)
 	} else {
+		fmt.Printf("Time to solve: %s\n\n", elapsed)
 		sud.dumpBoard(true)
 	}
+}
 
+func main() {
+	sud := initBoard()
+	sud.Solve(false)
+
+	sud1 := initBoard()
+	sud1.Solve(true)
 }
