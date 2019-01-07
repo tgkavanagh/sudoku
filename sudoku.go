@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -22,15 +23,8 @@ const (
 	MASK_ALL = 511
 )
 
-type CellData struct {
-	row uint8
-	col uint8
-	quad uint8
-	mask uint16
-}
-
 type Sudoku struct {
-	board []*CellData
+	board [9][9]uint16
 }
 
 var Mask2Val = map[uint16]int8 {
@@ -98,81 +92,63 @@ var easy_rootData = [9][9]int8 {
 	{7, 5, 0, 0, 0, 0, 0, 9, 6}, //9
 }
 
-func getQuad(row uint8, col uint8) uint8 {
+func getQuad(row int, col int) uint8 {
 	return (uint8)(((row/3) * 3) + (col/3) + 1)
 }
 
 func initBoard() Sudoku {
 	var sud Sudoku
-	var row uint8 = 0
 
-	for row <  MAX_ROWS {
-		var col uint8 = 0
-
-		for col < MAX_COLS {
-			quad := getQuad(row, col)
-
-			mask, ok := Val2Mask[rootData[row][col]]
-			if !ok {
-				fmt.Printf("Invalid value: %d\n")
-				mask = 511
+	for r, cols := range rootData {
+		for c, val := range cols {
+			if mask, ok := Val2Mask[val]; !ok {
+				log.Fatal("Invalid value in table (%d, %d): %v\n", r, c, val)
+			} else {
+				sud.board[r][c] = mask
 			}
-
-			newCell := &CellData {
-				row: row,
-				col: col,
-				quad: quad,
-				mask: mask,
-			}
-
-			sud.board = append(sud.board, newCell)
-			col++
 		}
-		row++
 	}
 
 	return sud
 }
 
 func (sud Sudoku) dumpBoard(convert bool) {
-	var prevRow uint8 = 0
-	for _, data := range sud.board {
-		if data.row != prevRow {
-			prevRow = data.row
-			fmt.Println("")
+	for _, cols := range sud.board {
+		for _, mask := range cols {
+			if convert {
+				val, _ := Mask2Val[mask]
+				fmt.Printf("\t%v ", val)
+			} else {
+				fmt.Printf("\t%09b ", mask)
+			}
 		}
-
-		val, ok := Mask2Val[data.mask]
-		if !ok {
-			val = 0
-		}
-
-		if convert {
-			fmt.Printf("\t%v ", val)
-		} else {
-			fmt.Printf("\t%09b ", data.mask)
-		}
+		fmt.Println("")
 	}
 	fmt.Printf("\n\n")
 }
 
-func (sud Sudoku) checkBoard(idx int) bool {
-	cell := sud.board[idx]
+func (sud *Sudoku)checkBoard(row int, col int, mask uint16) bool {
+	quad := getQuad(row, col)
 
-	_, ok := Mask2Val[cell.mask]
-	if !ok {
-		return false
-	}
+	for r, cols := range sud.board {
+		if r != row {
+			// Not our row so we need to check the specified column or any
+			// column with a matching quad
+			for c, tmask := range cols {
+				q := getQuad(r, c)
 
-	// Ensure the value is not already used in the corresponding row, col or getQuad
-	for _, tmp := range sud.board {
-		if tmp.row == cell.row && tmp.col == cell.col {
-			continue
-		}
-
-		if tmp.row == cell.row || tmp.col == cell.col || tmp.quad == cell.quad {
-			if tmp.mask == cell.mask {
-				return false
+				if c == col || q == quad {
+					if tmask == mask {
+						return false
+					}
+				}
+			}
+		} else {
+			// This is our row so check all columns except our
+			for c, tmask := range cols {
+				if c != col && tmask == mask {
+					return false
+				}
 			}
 		}
 	}
@@ -180,58 +156,66 @@ func (sud Sudoku) checkBoard(idx int) bool {
 	return sud.solve()
 }
 
-func (sud Sudoku)solve() bool {
-	// Find a cell that does not have a set value
-	for i, cell := range sud.board {
-		_, ok := Mask2Val[cell.mask]
-		if !ok {
-			// We have a winner
-			var b int8 = 1
-			for b <= MAX_VAL {
-				if mask, ok := Val2Mask[b]; ok {
-					oMask := cell.mask
-					cell.mask = cell.mask & mask
-					if _, ok := Mask2Val[cell.mask]; ok {
-						if sud.checkBoard(i) {
-							return true
+func (sud *Sudoku)updateBoard() {
+	for row, cols := range sud.board {
+    for col, mask := range cols {
+			if _, ok := Mask2Val[mask]; ok {
+				quad := getQuad(row, col)
+
+				// Loop through the table again and mark off possible values
+				for r, ucols := range sud.board {
+					if r != row {
+						// Update all entries with a match column or quad
+						for c, tmask := range ucols {
+							q := getQuad(r, c)
+							if c == col || q == quad && tmask != mask {
+								sud.board[r][c] = tmask &^ mask
+							}
+						}
+					} else {
+						// Update all cells in our row
+						for c, tmask := range ucols {
+							if tmask != mask {
+								sud.board[r][c] = tmask &^ mask
+							}
 						}
 					}
-					cell.mask = oMask
 				}
-				b++
 			}
-			return false
+		}
+	}
+}
+
+func (sud *Sudoku)solve() bool {
+	for r, cols := range sud.board {
+		for c, mask := range cols {
+			if _, ok := Mask2Val[mask]; !ok {
+				var b int8 = 1
+				for b <= MAX_VAL {
+					bmask, _ := Val2Mask[b]
+					if mask & bmask == bmask {
+						sud.board[r][c] = bmask
+						if sud.checkBoard(r, c, sud.board[r][c]) {
+							return true
+						}
+
+						sud.board[r][c] = mask
+					}
+					b++
+				}
+				return false
+			}
 		}
 	}
 
 	return true
 }
 
-func (sud Sudoku)update() {
-	for _, cell := range sud.board {
-		if _, ok := Mask2Val[cell.mask]; ok {
-			// Loop through the entire board and mark off the correct cells
-			for _, tmp := range sud.board {
-				if cell.row == tmp.row && cell.col == tmp.col {
-					continue
-				}
-
-				if _, ok := Mask2Val[tmp.mask]; !ok {
-					if cell.row == tmp.row || cell.col == tmp.col || cell.quad == tmp.quad {
-						tmp.mask = tmp.mask &^ cell.mask
-					}
-				}
-			}
-		}
-	}
-}
-
 func (sud Sudoku)Solve(update bool) {
-	//Start brute force
 	start := time.Now()
 
 	if update {
-		sud.update()
+		sud.updateBoard()
 	}
 
 	solved := sud.solve()
