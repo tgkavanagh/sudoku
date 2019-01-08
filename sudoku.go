@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type CellData struct {
 	col uint8
 	quad uint8
 	mask uint16
+	pval int
 }
 
 type Sudoku struct {
@@ -73,6 +75,19 @@ var emptyData = [9][9]int8 {
 
 var rootData = [9][9]int8 {
 //   0  1  2  3  4  5  6  7  8
+	{0, 0, 0, 5, 0, 0, 2, 0, 0}, //0
+	{0, 8, 0, 0, 0, 0, 0, 0, 0}, //1
+	{0, 0, 0, 1, 0, 0, 0, 0, 0}, //2
+	{0, 0, 0, 0, 7, 2, 0, 0, 3}, //3
+	{5, 0, 1, 0, 0, 0, 0, 4, 0}, //4
+	{6, 0, 0, 0, 0, 0, 0, 0, 0}, //5
+	{0, 0, 0, 0, 0, 7, 0, 5, 0}, //6
+	{0, 2, 0, 0, 3, 0, 0, 0, 0}, //7
+	{4, 0, 0, 0, 0, 0, 1, 0, 0}, //8
+}
+
+var expert_rootData = [9][9]int8 {
+//   0  1  2  3  4  5  6  7  8
 	{0, 7, 2, 0, 3, 0, 0, 8, 9}, //0
 	{5, 0, 0, 8, 0, 0, 0, 0, 0}, //1
 	{8, 0, 0, 0, 4, 0, 0, 0, 0}, //2
@@ -98,6 +113,24 @@ var easy_rootData = [9][9]int8 {
 	{7, 5, 0, 0, 0, 0, 0, 9, 6}, //9
 }
 
+type ByPval []*CellData
+func (pv ByPval) Len() int { return len(pv) }
+func (pv ByPval) Less(i, j int) bool { return pv[i].pval < pv[j].pval }
+func (pv ByPval) Swap(i, j int) { pv[i], pv[j] = pv[j], pv[i] }
+
+type ByPos []*CellData
+func (pv ByPos) Len() int { return len(pv) }
+func (pv ByPos) Swap(i, j int) { pv[i], pv[j] = pv[j], pv[i] }
+func (pv ByPos) Less(i, j int) bool {
+	if pv[i].row == pv[j].row {
+		return pv[i].col < pv[j].col
+	}
+
+	return pv[i].row < pv[j].row
+}
+
+var count int = 0
+
 func getQuad(row uint8, col uint8) uint8 {
 	return (uint8)(((row/3) * 3) + (col/3) + 1)
 }
@@ -112,10 +145,15 @@ func initBoard() Sudoku {
 		for col < MAX_COLS {
 			quad := getQuad(row, col)
 
+			pval := 1
 			mask, ok := Val2Mask[rootData[row][col]]
 			if !ok {
 				fmt.Printf("Invalid value: %d\n")
 				mask = 511
+			}
+
+			if mask == 511 {
+				pval = 9
 			}
 
 			newCell := &CellData {
@@ -123,6 +161,7 @@ func initBoard() Sudoku {
 				col: col,
 				quad: quad,
 				mask: mask,
+				pval: pval,
 			}
 
 			sud.board = append(sud.board, newCell)
@@ -188,6 +227,7 @@ func (sud Sudoku)solve() bool {
 			// We have a winner
 			var b int8 = 1
 			for b <= MAX_VAL {
+				count++
 				if mask, ok := Val2Mask[b]; ok {
 					oMask := cell.mask
 					cell.mask = cell.mask & mask
@@ -218,7 +258,11 @@ func (sud Sudoku)update() {
 
 				if _, ok := Mask2Val[tmp.mask]; !ok {
 					if cell.row == tmp.row || cell.col == tmp.col || cell.quad == tmp.quad {
-						tmp.mask = tmp.mask &^ cell.mask
+						tmask := tmp.mask &^ cell.mask
+						if tmask != tmp.mask {
+							tmp.mask = tmask
+							tmp.pval--
+						}
 					}
 				}
 			}
@@ -226,7 +270,7 @@ func (sud Sudoku)update() {
 	}
 }
 
-func (sud Sudoku)Solve(update bool) {
+func (sud Sudoku)Solve(update bool, sortboard bool) {
 	//Start brute force
 	start := time.Now()
 
@@ -234,8 +278,22 @@ func (sud Sudoku)Solve(update bool) {
 		sud.update()
 	}
 
+	if sortboard {
+		sort.Sort(ByPval(sud.board))
+/*
+		for _, data := range sud.board {
+			fmt.Printf("%v\n", data)
+		}
+		return
+*/
+	}
+
 	solved := sud.solve()
 	elapsed := time.Since(start)
+
+	if sortboard {
+		sort.Sort(ByPos(sud.board))
+	}
 
 	if !solved {
 		sud.dumpBoard(false)
@@ -246,9 +304,17 @@ func (sud Sudoku)Solve(update bool) {
 }
 
 func main() {
-	sud := initBoard()
-	sud.Solve(false)
+	/*Board()
+	sud.Solve(false, false)
+	fmt.Printf("Count: %d\n", count)
+	count = 0
 
 	sud1 := initBoard()
-	sud1.Solve(true)
+	sud1.Solve(true, false)
+	fmt.Printf("Count: %d\n", count)
+	count = 0
+*/
+	sud2 := initBoard()
+	sud2.Solve(true, true)
+	fmt.Printf("Count: %d\n", count)
 }
