@@ -14,20 +14,20 @@ const (
 	MAX_ROWS = 9
 	MAX_COLS = 9
 	MAX_QUAD = 9
-	MAX_VAL = 9
-	MASK_1 = 0x01 << 0
-	MASK_2 = 0x01 << 1
-	MASK_3 = 0x01 << 2
-	MASK_4 = 0x01 << 3
-	MASK_5 = 0x01 << 4
-	MASK_6 = 0x01 << 5
-	MASK_7 = 0x01 << 6
-	MASK_8 = 0x01 << 7
-	MASK_9 = 0x01 << 8
+	MAX_VAL  = 9
+	MASK_1   = 0x01 << 0
+	MASK_2   = 0x01 << 1
+	MASK_3   = 0x01 << 2
+	MASK_4   = 0x01 << 3
+	MASK_5   = 0x01 << 4
+	MASK_6   = 0x01 << 5
+	MASK_7   = 0x01 << 6
+	MASK_8   = 0x01 << 7
+	MASK_9   = 0x01 << 8
 	MASK_ALL = 511
 )
 
-var Mask2Val = map[uint16]int8 {
+var Mask2Val = map[uint16]int8{
 	MASK_1: 1,
 	MASK_2: 2,
 	MASK_3: 3,
@@ -39,7 +39,7 @@ var Mask2Val = map[uint16]int8 {
 	MASK_9: 9,
 }
 
-var Val2Mask = map[int8]uint16 {
+var Val2Mask = map[int8]uint16{
 	0: MASK_ALL,
 	1: MASK_1,
 	2: MASK_2,
@@ -55,8 +55,8 @@ var Val2Mask = map[int8]uint16 {
 var count int = 0
 
 type Masks struct {
-	row uint16
-	col uint16
+	row  uint16
+	col  uint16
 	quad uint16
 }
 
@@ -64,7 +64,7 @@ type Puzzle [MAX_ROWS][MAX_COLS]int8
 type Board [MAX_ROWS]Masks
 
 func getQuad(row int, col int) int {
-	return ((row/3) * 3) + (col/3)
+	return ((row / 3) * 3) + (col / 3)
 }
 
 func initBoard(fn string) (Puzzle, Board) {
@@ -73,7 +73,7 @@ func initBoard(fn string) (Puzzle, Board) {
 
 	// Initialize the Board
 	for i, _ := range tboard {
-		tboard[i] = Masks{row: MASK_ALL, col: MASK_ALL, quad: MASK_ALL,}
+		tboard[i] = Masks{row: MASK_ALL, col: MASK_ALL, quad: MASK_ALL}
 	}
 
 	// Read the puzzle file
@@ -91,7 +91,7 @@ func initBoard(fn string) (Puzzle, Board) {
 	// Convert the individual lines into individual values
 	for row, line := range lines {
 		vals := strings.Split(line, " ")
-		if len(vals) == 9 {
+		if len(vals) == MAX_COLS {
 			for col, strc := range vals {
 				val, _ := strconv.Atoi(strc)
 				q := getQuad(row, col)
@@ -135,7 +135,7 @@ func solve(table Puzzle, tboard Board, row int, col int, val int8) (Puzzle, Boar
 				var b int8 = 1
 				for b <= MAX_VAL {
 					tmask, _ := Val2Mask[b]
-					if masks & tmask == tmask {
+					if masks&tmask == tmask {
 						if tp, tb, solved := solve(table, tboard, row, col, b); solved {
 							return tp, tb, solved
 						}
