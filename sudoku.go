@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -60,20 +61,127 @@ type Masks struct {
 	quad uint16
 }
 
-type Puzzle [MAX_ROWS][MAX_COLS]int8
-type Board [MAX_ROWS]Masks
+type CellData struct {
+	row int
+	col int
+	quad int
+	pvals int
+	val int8
+}
+
+type Puzzle []CellData
+type Board []Masks
+
+//var puzzle Puzzle
+//var board [MAX_ROWS]Masks
+
+type ByPval Puzzle
+func (pv ByPval) Len() int { return len(pv) }
+func (pv ByPval) Less(i, j int) bool { return pv[i].pvals < pv[j].pvals }
+func (pv ByPval) Swap(i, j int) { pv[i], pv[j] = pv[j], pv[i]}
+
+type ByPos Puzzle
+func (pv ByPos) Len() int { return len(pv) }
+func (pv ByPos) Swap(i, j int) { pv[i], pv[j] = pv[j], pv[i] }
+func (pv ByPos) Less(i, j int) bool {
+	if pv[i].row == pv[j].row {
+		return pv[i].col < pv[j].col
+	}
+
+	return pv[i].row < pv[j].row
+}
 
 func getQuad(row int, col int) int {
 	return ((row / 3) * 3) + (col / 3)
 }
 
+func calcBitsSet(mask uint16) int {
+	var i uint = 0
+	count := 0
+	for i < 16 {
+		if (mask >> i) & 1 == 1 {
+			count++
+		}
+		i++
+	}
+
+	return count
+}
+
+func (puz Puzzle)calcPvals(board Board) {
+	for i, cell := range puz {
+		row := cell.row
+		col := cell.col
+		quad := cell.quad
+
+		if cell.val == 0 {
+			mask := board[row].row & board[col].col & board[quad].quad
+			puz[i].pvals = calcBitsSet(mask)
+		} else {
+			puz[i].pvals = 0
+		}
+	}
+}
+
+func (puz Puzzle)solve(idx int, board Board) (Board, bool) {
+	count++
+	for idx < (MAX_ROWS*MAX_COLS) {
+		if puz[idx].val == 0 {
+			row := puz[idx].row
+			col := puz[idx].col
+			quad := puz[idx].quad
+
+			// Find possible values
+			masks := board[row].row & board[col].col & board[quad].quad
+
+			var b int8 = 1
+			for b <= MAX_VAL {
+				tmask, _ := Val2Mask[b]
+				if masks&tmask == tmask {
+					or := board[row].row
+					oc := board[col].col
+					oq := board[quad].quad
+
+					board[row].row = board[row].row &^ tmask
+					board[col].col = board[col].col &^ tmask
+					board[quad].quad = board[quad].quad &^ tmask
+
+					//fmt.Printf("Solving for idx %d val %d\n", idx, b)
+					if tb, solved := puz.solve(idx+1, board); solved {
+						puz[idx].val = b
+						return tb, solved
+					}
+
+					board[row].row = or
+					board[col].col = oc
+					board[quad].quad = oq
+				}
+
+				b++
+			}
+
+			if idx == 17 {
+				dumpPvals(board)
+			}
+			return board, false
+		}
+
+		idx++
+	}
+
+	return board, true
+}
+
 func initBoard(fn string) (Puzzle, Board) {
 	var puzzle Puzzle
-	var tboard Board
+	var board Board
 
 	// Initialize the Board
-	for i, _ := range tboard {
-		tboard[i] = Masks{row: MASK_ALL, col: MASK_ALL, quad: MASK_ALL}
+	i := 0
+	for i < MAX_ROWS {
+		newBcell := Masks{row: MASK_ALL, col: MASK_ALL, quad: MASK_ALL}
+		board = append(board, newBcell)
+		i++
 	}
 
 	// Read the puzzle file
@@ -94,66 +202,34 @@ func initBoard(fn string) (Puzzle, Board) {
 		if len(vals) == MAX_COLS {
 			for col, strc := range vals {
 				val, _ := strconv.Atoi(strc)
-				q := getQuad(row, col)
-				puzzle[row][col] = (int8)(val)
+				quad := getQuad(row, col)
+
+				newCell := CellData{
+					row: row,
+					col: col,
+					quad: quad,
+					pvals: 0,
+					val: (int8)(val),
+				}
+
+				puzzle = append(puzzle, newCell)
+
 				if val > 0 {
 					if mask, ok := Val2Mask[(int8)(val)]; ok {
 						// Remove the value from the list of possible values for the corresponding
 						// row,, col, quad
-						tboard[row].row = tboard[row].row &^ mask
-						tboard[col].col = tboard[col].col &^ mask
-						tboard[q].quad = tboard[q].quad &^ mask
+						board[row].row = board[row].row &^ mask
+						board[col].col = board[col].col &^ mask
+						board[quad].quad = board[quad].quad &^ mask
 					}
 				}
 			}
 		}
 	}
 
-	return puzzle, tboard
-}
+	puzzle.calcPvals(board)
 
-func solve(table Puzzle, tboard Board, row int, col int, val int8) (Puzzle, Board, bool) {
-	if val > 0 {
-		q := getQuad(row, col)
-
-		tmask, _ := Val2Mask[val]
-		tboard[row].row = tboard[row].row &^ tmask
-		tboard[col].col = tboard[col].col &^ tmask
-		tboard[q].quad = tboard[q].quad &^ tmask
-		table[row][col] = val
-	}
-
-	for row < MAX_ROWS {
-		for col < MAX_COLS {
-
-			if table[row][col] == 0 {
-				q := getQuad(row, col)
-
-				// Find possible values
-				masks := tboard[row].row & tboard[col].col & tboard[q].quad
-
-				var b int8 = 1
-				for b <= MAX_VAL {
-					tmask, _ := Val2Mask[b]
-					if masks&tmask == tmask {
-						if tp, tb, solved := solve(table, tboard, row, col, b); solved {
-							return tp, tb, solved
-						}
-					}
-
-					b++
-				}
-
-				return table, tboard, false
-			}
-			col++
-		}
-		// Reset cols back to 0 to start
-		col = 0
-		row++
-	}
-
-	return table, tboard, true
+	return puzzle, board
 }
 
 func main() {
@@ -164,31 +240,65 @@ func main() {
 		log.Fatal("Need to specify a puzzle file")
 	}
 
-	solved := false
-
 	// Read in the puzzle and initialize the board
 	puzzle, board := initBoard(*filename)
+	sort.Sort(ByPval(puzzle))
 
 	start := time.Now()
-	if puzzle, board, solved = solve(puzzle, board, 0, 0, 0); solved {
+	if _, solved := puzzle.solve(0, board); solved {
 		elapsed := time.Since(start)
-		fmt.Printf("Time to solve: %s\n\n", elapsed)
-		dumpBoard(puzzle)
+		fmt.Printf("Time to solve: %s (recursive calls: %d)\n\n", elapsed, count)
+		sort.Sort(ByPos(puzzle))
+		puzzle.dumpBoard()
+	} else {
+		fmt.Printf("Failed to solve puzzle: %d\n", count)
 	}
 }
 
-func dumpBoard(puzzle Puzzle) {
-	for _, cols := range puzzle {
-		for _, val := range cols {
-			fmt.Printf("\t%v ", val)
+func (puz Puzzle)dumpBoard() {
+	prevRow := 0
+	for _, data := range puz {
+		if data.row != prevRow {
+			prevRow = data.row
+			fmt.Println("")
 		}
-		fmt.Println("")
+
+		fmt.Printf("\t%v ", data.val)
 	}
 	fmt.Printf("\n\n")
 }
 
-func dumpMasks(tboard Board) {
-	for _, data := range tboard {
-		fmt.Printf("%09b %09b %09b\n", data.row, data.col, data.quad)
+func (puz Puzzle)dumpTable(board Board) {
+	for i, cell := range puz {
+		row := puz[i].row
+		col := puz[i].col
+		quad := puz[i].quad
+
+		// Find possible values
+		masks := board[row].row & board[col].col & board[quad].quad
+
+		fmt.Printf("%d: %v %09b\n", i, cell, masks)
+	}
+}
+
+func dumpPvals(board Board) {
+		r := 0
+
+		for r < MAX_ROWS {
+			c := 0
+			for c < MAX_COLS {
+				q := getQuad(r, c)
+
+				masks := board[r].row & board[c].col & board[q].quad
+				fmt.Printf("R %d C %d Q %d M %09b\n", r, c, q, masks)
+				c++
+			}
+			r++
+		}
+}
+
+func dumpMasks(board Board) {
+	for i, data := range board {
+		fmt.Printf("%2d %09b %09b %09b\n", i, data.row, data.col, data.quad)
 	}
 }
